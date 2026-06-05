@@ -1,0 +1,282 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MERCHANT
+  CONSUMER
+}
+
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  cartItems CartItem[]
+  name      String
+  email     String?  @unique
+  password  String
+  phone     String   @unique
+  role      UserRole @default(CONSUMER)
+  cityId    String?
+  city      City?    @relation(fields: [cityId], references: [id])
+  image     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  merchant    Merchant?
+  reviews     Review[]
+  orders      Order[]
+  favorites   Favorite[]
+  messages    Message[]
+  sentTickets Ticket[]    @relation("SentTickets")
+  assignedTickets Ticket[] @relation("AssignedTickets")
+
+  @@map("users")
+}
+
+model City {
+  id        String   @id @default(cuid())
+  nameAr    String   @map("name_ar")
+  slug      String   @unique
+  lat       Float?
+  lng       Float?
+  image     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sectors   Sector[]
+  users     User[]
+  merchants Merchant[]
+
+  @@map("cities")
+}
+
+model Sector {
+  id          String   @id @default(cuid())
+  nameAr      String   @map("name_ar")
+  slug        String
+  description String?
+  icon        String?
+  image       String?
+  parentId    String?  @map("parent_id")
+  parent      Sector?  @relation("SectorHierarchy", fields: [parentId], references: [id])
+  children    Sector[] @relation("SectorHierarchy")
+  cityId      String   @map("city_id")
+  city        City     @relation(fields: [cityId], references: [id])
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  merchants Merchant[]
+
+  @@unique([slug, cityId])
+  @@map("sectors")
+}
+
+model Merchant {
+  id           String   @id @default(cuid())
+  coupons Coupon[]
+  nameAr       String   @map("name_ar")
+  slug         String
+  description  String?
+  logo         String?
+  coverImage   String?  @map("cover_image")
+  contactEmail String?  @map("contact_email")
+  contactPhone String?  @map("contact_phone")
+  website      String?
+  address      String?
+  locationLat  Float?   @map("location_lat")
+  locationLng  Float?   @map("location_lng")
+  workingHours Json?    @map("working_hours")
+  isVerified   Boolean  @default(false) @map("is_verified")
+  status       String   @default("active")
+  viewCount    Int      @default(0) @map("view_count")
+  responseTime Int?     @map("response_time")
+  cityId       String   @map("city_id")
+  city         City     @relation(fields: [cityId], references: [id])
+  sectorId     String   @map("sector_id")
+  sector       Sector   @relation(fields: [sectorId], references: [id])
+  userId       String?  @unique @map("user_id")
+  user         User?    @relation(fields: [userId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  products Product[]
+  reviews  Review[]
+  orders   Order[]
+
+  @@unique([slug, cityId])
+  @@map("merchants")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  cartItems CartItem[]
+  nameAr      String   @map("name_ar")
+  description String?
+  price       Float
+  currency    String   @default("SAR")
+  images      String[]
+  isService   Boolean  @default(false) @map("is_service")
+  category    String?
+  tags        String[]
+  isActive    Boolean  @default(true) @map("is_active")
+  merchantId  String   @map("merchant_id")
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  favorites Favorite[]
+  orderItems OrderItem[]
+
+  @@map("products")
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  rating     Int
+  comment    String?
+  consumerId String   @map("consumer_id")
+  consumer   User     @relation(fields: [consumerId], references: [id])
+  merchantId String   @map("merchant_id")
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([consumerId, merchantId])
+  @@map("reviews")
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  status          OrderStatus @default(PENDING)
+  message         String?
+  totalAmount     Float?      @map("total_amount")
+  shippingAddress String?     @map("shipping_address")
+  phone           String?
+  consumerId      String      @map("consumer_id")
+  consumer        User        @relation(fields: [consumerId], references: [id])
+  merchantId      String      @map("merchant_id")
+  merchant        Merchant    @relation(fields: [merchantId], references: [id])
+  couponId        String?     @map("coupon_id")
+  coupon          Coupon?     @relation(fields: [couponId], references: [id])
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  items     OrderItem[]
+  messages  Message[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  quantity  Int     @default(1)
+  unitPrice Float   @map("unit_price")
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+  orderId   String  @map("order_id")
+  order     Order   @relation(fields: [orderId], references: [id])
+
+  @@map("order_items")
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@map("favorites")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  senderId  String   @map("sender_id")
+  sender    User     @relation(fields: [senderId], references: [id])
+  orderId   String?  @map("order_id")
+  order     Order?   @relation(fields: [orderId], references: [id])
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now())
+
+  @@map("messages")
+}
+
+model Ticket {
+  id          String   @id @default(cuid())
+  subject     String
+  description String
+  status      String   @default("open")
+  priority    String   @default("medium")
+  senderId    String   @map("sender_id")
+  sender      User     @relation("SentTickets", fields: [senderId], references: [id])
+  assigneeId  String?  @map("assignee_id")
+  assignee    User?    @relation("AssignedTickets", fields: [assigneeId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("tickets")
+}
+
+model Coupon {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  discountPercent Float @default(0) @map("discount_percent")
+  discountAmount  Float @default(0) @map("discount_amount")
+  minOrder   Float    @default(0) @map("min_order")
+  maxUses    Int      @default(100) @map("max_uses")
+  usedCount  Int      @default(0) @map("used_count")
+  expiresAt  DateTime? @map("expires_at")
+  isActive   Boolean  @default(true) @map("is_active")
+  merchantId String?  @map("merchant_id")
+  merchant   Merchant? @relation(fields: [merchantId], references: [id])
+  createdAt  DateTime @default(now())
+
+  orders Order[]
+
+  @@map("coupons")
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  quantity  Int      @default(1)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@map("cart_items")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  title     String
+  body      String?
+  type      String   @default("info")
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}

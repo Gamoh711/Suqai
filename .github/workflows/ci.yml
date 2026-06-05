@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  lint-typecheck:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: suqai
+          POSTGRES_PASSWORD: suqai
+          POSTGRES_DB: suqai
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:8-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm test
+        env:
+          DATABASE_URL: postgresql://suqai:suqai@localhost:5432/suqai?schema=public
+          NEXTAUTH_SECRET: test-secret
+          SESSION_SECRET: test-secret
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [lint-typecheck]
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: docker build -f docker/Dockerfile.web --target runner -t suqai-web:ci .
+
+      - run: docker build -f docker/Dockerfile.web --target migrate -t suqai-migrate:ci .
+
+      - run: docker build -f services/ai-assistant/Dockerfile -t suqai-ai:ci services/ai-assistant

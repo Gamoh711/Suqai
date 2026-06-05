@@ -1,0 +1,148 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      EMAIL: ${SSL_EMAIL:-}
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:?DB_USER مطلوب}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD مطلوب}
+      POSTGRES_DB: ${DB_NAME:-suqai}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME:-suqai}?schema=public
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET مطلوب}
+      SESSION_SECRET: ${SESSION_SECRET:-${NEXTAUTH_SECRET}}
+      NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:3000}
+      AI_SERVICE_URL: http://ai-assistant:8000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    restart: unless-stopped
+
+  ai-assistant:
+    build:
+      context: ../services/ai-assistant
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME:-suqai}?schema=public
+      EMBEDDING_MODEL: intfloat/multilingual-e5-small
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME:-suqai}?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: no
+
+  backup:
+    build:
+      context: .
+      dockerfile: backup/Dockerfile
+    volumes:
+      - backup_data:/backups
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME:-suqai}?schema=public
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  healthcheck-ping:
+    image: curlimages/curl:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        INTERVAL=${HEALTHCHECKS_INTERVAL:-300};
+        URL="${HEALTHCHECKS_URL}";
+        if [ -z "$URL" ]; then
+          echo "HEALTHCHECKS_URL not set. Skipping.";
+          exit 0;
+        fi;
+        while true; do
+          sleep $INTERVAL;
+          curl -fsS --retry 3 "$URL" 2>/dev/null || true;
+        done
+    environment:
+      HEALTHCHECKS_URL: ${HEALTHCHECKS_URL:-}
+      HEALTHCHECKS_INTERVAL: ${HEALTHCHECKS_INTERVAL:-300}
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:
+  backup_data:

@@ -1,0 +1,25 @@
+# Healthchecks.io monitoring configuration
+# 1. Create a check at https://healthchecks.io
+# 2. Set HEALTHCHECKS_URL in .env to the ping URL
+# 3. The docker-compose healthcheck-ping service will ping it every N seconds
+#
+# Example HEALTHCHECKS_URL:
+#   https://hc-ping.com/your-uuid-here
+#
+# Optional: add ?rid= for readme-based checks
+#   https://hc-ping.com/your-uuid/suqai-production
+#
+# Alert channels supported by Healthchecks.io:
+# - Email (free)
+# - Slack (free)
+# - Telegram (free)
+# - Webhook (free)
+# - Pushover (free)
+# - PagerDuty (paid plan)
+# - Opsgenie (paid plan)
+# - Microsoft Teams (paid plan)
+# - Discord (free)
+# - Signal (free)
+# - Gotify (free)
+# - Matrix (free)
+# - Apprise (free)
